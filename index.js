@@ -16,6 +16,7 @@ const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology:
 async function run() {
     const usersCollection = client.db("mobile-resell").collection("users")
     const phonesCollection = client.db("mobile-resell").collection("phones")
+    const categoryCollection = client.db("mobile-resell").collection("category")
     // handle user
     app.put('/users/:email', async (req, res) => {
         const email = req.params.email;
@@ -26,15 +27,33 @@ async function run() {
             $set: user,
         };
         const results = await usersCollection.updateOne(filter, updateDoc, options);
-        const token = jwt.sign({email }, process.env.SECRET_TOKEN, {expiresIn: '1d'});
-        res.send({results, token})
+        const token = jwt.sign({ email }, process.env.SECRET_TOKEN, { expiresIn: '1d' });
+        res.send({ results, token })
+    })
+    app.get('/users/role/:email', async(req, res)=> {
+        const email = req.params.email;
+        const query = {email: email};
+        const user = await usersCollection.findOne(query);
+        res.send({role: user.role})
     })
     // manage products
-    app.post('/products', async(req, res) => {
+    app.post('/products', async (req, res) => {
         console.log(req.body)
         const product = req.body;
         const results = await phonesCollection.insertOne(product);
         res.send(results)
+    })
+    app.get('/category/:name', async (req, res) => {
+        const category = req.params.name;
+        const query = { category: category };
+        const allPhones = await phonesCollection.find({}).toArray();
+        const uniqueCatPhones = allPhones.filter(phone => phone.newPhone.category === category)
+        res.send(uniqueCatPhones);
+    })
+    app.get('/category', async (req, res) => {
+        const query = {};
+        const categories = await categoryCollection.find(query).toArray();
+        res.send(categories)
     })
     app.get('/', (req, res) => {
         res.send('resell product server is running')
