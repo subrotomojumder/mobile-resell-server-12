@@ -15,6 +15,7 @@ const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology:
 
 async function run() {
     const usersCollection = client.db("mobile-resell").collection("users")
+    const phonesCollection = client.db("mobile-resell").collection("phones")
     // handle user
     app.put('/users/:email', async (req, res) => {
         const email = req.params.email;
@@ -28,11 +29,16 @@ async function run() {
         const token = jwt.sign({email }, process.env.SECRET_TOKEN, {expiresIn: '1d'});
         res.send({results, token})
     })
-    
+    // manage products
+    app.post('/products', async(req, res) => {
+        console.log(req.body)
+        const product = req.body;
+        const results = await phonesCollection.insertOne(product);
+        res.send(results)
+    })
     app.get('/', (req, res) => {
         res.send('resell product server is running')
     })
-
 }
 run().catch(e => console.log(e))
 
