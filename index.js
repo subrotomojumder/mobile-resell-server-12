@@ -17,6 +17,7 @@ async function run() {
     const usersCollection = client.db("mobile-resell").collection("users")
     const phonesCollection = client.db("mobile-resell").collection("phones")
     const categoryCollection = client.db("mobile-resell").collection("category")
+    const orderCollection = client.db("mobile-resell").collection("orders")
     // handle user
     app.put('/users/:email', async (req, res) => {
         const email = req.params.email;
@@ -30,27 +31,26 @@ async function run() {
         const token = jwt.sign({ email }, process.env.SECRET_TOKEN, { expiresIn: '1d' });
         res.send({ results, token })
     })
-    app.get('/users/role/:email', async(req, res)=> {
+    app.get('/users/role/:email', async (req, res) => {
         const email = req.params.email;
-        const query = {email: email};
+        const query = { email: email };
         const user = await usersCollection.findOne(query);
-        res.send({role: user.role})
+        res.send({ role: user.role })
     })
     // manage products
     app.post('/products', async (req, res) => {
-        console.log(req.body)
         const product = req.body;
         const results = await phonesCollection.insertOne(product);
         res.send(results)
     })
-    app.get('/products/:email', async(req, res)=> {
+    app.get('/products/:email', async (req, res) => {
         const email = req.params.email;
-        const query = {sellerEmail : email};
+        const query = { sellerEmail: email };
         const products = await phonesCollection.find(query).toArray();
         res.send(products)
     })
-    app.delete('/products/:id', async(req, res)=> {
-        const query = {_id: ObjectId(req.params.id)};
+    app.delete('/products/:id', async (req, res) => {
+        const query = { _id: ObjectId(req.params.id) };
         const results = await phonesCollection.deleteOne(query);
         res.send(results);
     })
@@ -66,10 +66,27 @@ async function run() {
         const categories = await categoryCollection.find(query).toArray();
         res.send(categories)
     })
+    // manage orders
+    app.post('/orders', async (req, res) => {
+        const phoneId = req.query.phoneId;
+        const order = req.body;
+        const filter = { _id: ObjectId(phoneId) };
+        const updateDoc = {
+            $set: {
+                status: "sold"
+            }
+        };
+        const addStatus = await phonesCollection.updateOne(filter, updateDoc);
+        if (!addStatus.modifiedCount) {
+            res.send({acknowledged: false, message: 'invalid order'})
+        }
+        const results = await orderCollection.insertOne(order);
+        res.send(results)
+    })
     // advertise api
-    app.put('/advertised/:id', async(req, res)=> {
+    app.put('/advertised/:id', async (req, res) => {
         const phoneId = req.params.id;
-        const filter = {_id: ObjectId(phoneId)};
+        const filter = { _id: ObjectId(phoneId) };
         const updateDoc = {
             $set: {
                 advertise: true,
@@ -79,8 +96,8 @@ async function run() {
         const results = await phonesCollection.updateOne(filter, updateDoc, options);
         res.send(results)
     })
-    app.get('/advertised', async(req, res)=> {
-        const allPhones = await phonesCollection.find({ }).toArray();
+    app.get('/advertised', async (req, res) => {
+        const allPhones = await phonesCollection.find({}).toArray();
         const withoutPaid = allPhones.filter(phone => phone.status !== 'sold');
         const advertised = withoutPaid.filter(phone => phone.advertise);
         res.send(advertised)
