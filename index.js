@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken');
 const port = process.env.PORT || 5000;
 require('dotenv').config()
@@ -43,6 +43,17 @@ async function run() {
         const results = await phonesCollection.insertOne(product);
         res.send(results)
     })
+    app.get('/products/:email', async(req, res)=> {
+        const email = req.params.email;
+        const query = {sellerEmail : email};
+        const products = await phonesCollection.find(query).toArray();
+        res.send(products)
+    })
+    app.delete('/products/:id', async(req, res)=> {
+        const query = {_id: ObjectId(req.params.id)};
+        const results = await phonesCollection.deleteOne(query);
+        res.send(results);
+    })
     app.get('/category/:name', async (req, res) => {
         const category = req.params.name;
         const query = { category: category };
@@ -54,6 +65,25 @@ async function run() {
         const query = {};
         const categories = await categoryCollection.find(query).toArray();
         res.send(categories)
+    })
+    // advertise api
+    app.put('/advertised/:id', async(req, res)=> {
+        const phoneId = req.params.id;
+        const filter = {_id: ObjectId(phoneId)};
+        const updateDoc = {
+            $set: {
+                advertise: true,
+            }
+        };
+        const options = { upsert: true };
+        const results = await phonesCollection.updateOne(filter, updateDoc, options);
+        res.send(results)
+    })
+    app.get('/advertised', async(req, res)=> {
+        const allPhones = await phonesCollection.find({ }).toArray();
+        const withoutPaid = allPhones.filter(phone => phone.status !== 'sold');
+        const advertised = withoutPaid.filter(phone => phone.advertise);
+        res.send(advertised)
     })
     app.get('/', (req, res) => {
         res.send('resell product server is running')
