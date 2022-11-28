@@ -2,13 +2,14 @@ const express = require('express');
 const cors = require('cors');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken');
-const port = process.env.PORT || 5000;
 require('dotenv').config()
+const port = process.env.PORT || 5000;
 const app = express();
+
+const stripe = require("stripe")(process.env.STRIPE_SECRET);
 
 app.use(cors());
 app.use(express.json());
-
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.uxk5wr6.mongodb.net/?retryWrites=true&w=majority`;
 const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true, serverApi: ServerApiVersion.v1 });
@@ -33,6 +34,7 @@ async function run() {
     const phonesCollection = client.db("mobile-resell").collection("phones");
     const categoryCollection = client.db("mobile-resell").collection("category");
     const orderCollection = client.db("mobile-resell").collection("orders");
+    const paymentCollection = client.db("mobile-resell").collection("payments");
     // admin verify middleware 
     const verifyAdmin = async (req, res, next) => {
         const decodedEmail = req.decoded.email;
@@ -123,10 +125,8 @@ async function run() {
         const category = req.params.name;
         const query = { category: category };
         const phones = await phonesCollection.find(query).toArray();
-        // const allOrders = await orderCollection.find({}).toArray();
-        // const ordersIds = allOrders.map(order => order.phoneId);
-        // const orderLessPhones = phones.filter(phone => !ordersIds.includes(phone._id.toString()));
-        res.send(phones);
+        const availablePhones = phones.filter(phone => phone.paid !== true);
+        res.send(availablePhones);
     })
     app.get('/category', async (req, res) => {
         const query = {};
@@ -152,15 +152,52 @@ async function run() {
     })
     app.get('/orders', verifyJwt, async (req, res) => {
         const email = req.decoded.email;
-        const query = {clientEmail: email};
+        const query = { clientEmail: email };
         const myOrders = await orderCollection.find(query).toArray();
         res.send(myOrders);
     })
-    app.delete('/orders/:id',verifyJwt, async(req, res, next)=> {
-        const query = {_id: ObjectId(req.params.id)};
+    app.delete('/orders/:id', verifyJwt, async (req, res, next) => {
+        const query = { _id: ObjectId(req.params.id) };
         const results = await orderCollection.deleteOne(query);
         res.send(results)
-    }) 
+    })
+    app.get('/orders/:id', async (req, res) => {
+        const orderID = req.params.id;
+        const query = { _id: ObjectId(orderID) };
+        const order = await orderCollection.findOne(query);
+        res.send(order)
+    })
+    // create payment intent
+    app.post('/create-payment-intent', verifyJwt, async (req, res) => {
+        const order = req.body;
+        const price = order.price;
+        const amount = price * 100;
+
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount: amount,
+            currency: "usd",
+            "payment_method_types": [
+                "card"
+            ],
+        })
+        res.send({ clientSecret: paymentIntent.client_secret });
+    })
+    // payments api
+    app.post('/payments', async (req, res) => {
+        const payment = req.body;
+        const phoneQuery = { _id: ObjectId(payment.phoneId) };
+        const orderQuery = { _id: ObjectId(payment.orderId) };
+        const updateDoc = {
+            $set: {
+                paid: true
+            }
+        }
+        const phoneUpdate = await phonesCollection.updateOne(phoneQuery, updateDoc);
+        const orderUpdate = await orderCollection.updateOne(orderQuery, updateDoc)
+        const results = await paymentCollection.insertOne(payment);
+        res.send(results);
+    })
+
     // advertise api
     app.put('/advertised/:id', verifyJwt, async (req, res) => {
         const phoneId = req.params.id;
@@ -175,7 +212,7 @@ async function run() {
     })
     app.get('/advertised', async (req, res) => {
         const allPhones = await phonesCollection.find({}).toArray();
-        const withoutPaid = allPhones.filter(phone => phone.status !== 'sold');
+        const withoutPaid = allPhones.filter(phone => phone.paid !== true);
         const advertised = withoutPaid.filter(phone => phone.advertise);
         res.send(advertised)
     })
