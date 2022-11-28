@@ -226,6 +226,14 @@ async function run() {
         const reports = await reportCollection.find({}).toArray();
         res.send(reports)
     })
+    app.delete('/reports-item/', verifyJwt, verifyAdmin, async(req, res)=> {
+        const reportQuery = {_id: ObjectId(req.query.reportId)};
+        const phoneQuery = {_id: ObjectId(req.query.phoneId)};
+        const reportResults = await reportCollection.deleteOne(reportQuery);
+        const phoneResults = await phonesCollection.deleteOne(phoneQuery);
+        const results = reportResults.deletedCount && phoneResults.deletedCount;
+        res.send({deletedCount: true})
+    })
     app.get('/', (req, res) => {
         res.send('resell product server is running')
     })
