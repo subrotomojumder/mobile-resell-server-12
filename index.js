@@ -35,6 +35,7 @@ async function run() {
     const categoryCollection = client.db("mobile-resell").collection("category");
     const orderCollection = client.db("mobile-resell").collection("orders");
     const paymentCollection = client.db("mobile-resell").collection("payments");
+    const reportCollection = client.db("mobile-resell").collection("reports");
     // admin verify middleware 
     const verifyAdmin = async (req, res, next) => {
         const decodedEmail = req.decoded.email;
@@ -215,6 +216,15 @@ async function run() {
         const withoutPaid = allPhones.filter(phone => phone.paid !== true);
         const advertised = withoutPaid.filter(phone => phone.advertise);
         res.send(advertised)
+    })
+    app.post('/reports', verifyJwt, async (req, res)=> {
+        const report = req.body;
+        const results = await reportCollection.insertOne(report);
+        res.send(results)
+    })
+    app.get('/reports', verifyJwt, verifyAdmin, async (req, res)=> {
+        const reports = await reportCollection.find({}).toArray();
+        res.send(reports)
     })
     app.get('/', (req, res) => {
         res.send('resell product server is running')
