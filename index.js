@@ -15,10 +15,10 @@ const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology:
 
 const verifyJwt = (req, res, next) => {
     const authHeader = req.headers.authorization;
-    const token = authHeader.split(' ')[1];
-    if (!token) {
+    if (!authHeader) {
         return res.status(401).send({ message: 'unauthorized' })
     }
+    const token = authHeader.split(' ')[1];
     jwt.verify(token, process.env.SECRET_TOKEN, function (err, decoded) {
         if (err) {
             return res.status(403).send({ message: 'forbidden access' })
@@ -29,10 +29,31 @@ const verifyJwt = (req, res, next) => {
 }
 
 async function run() {
-    const usersCollection = client.db("mobile-resell").collection("users")
-    const phonesCollection = client.db("mobile-resell").collection("phones")
-    const categoryCollection = client.db("mobile-resell").collection("category")
-    const orderCollection = client.db("mobile-resell").collection("orders")
+    const usersCollection = client.db("mobile-resell").collection("users");
+    const phonesCollection = client.db("mobile-resell").collection("phones");
+    const categoryCollection = client.db("mobile-resell").collection("category");
+    const orderCollection = client.db("mobile-resell").collection("orders");
+    // admin verify middleware 
+    const verifyAdmin = async (req, res, next) => {
+        const decodedEmail = req.decoded.email;
+        const query = { email: decodedEmail };
+        const user = await usersCollection.findOne(query);
+        if (user?.role !== 'Admin') {
+            return res.status(403).send({ message: 'forbidden access' })
+        }
+        next();
+    }
+    // verify seller middleware
+    const verifySeller = async (req, res, next) => {
+        const decodedEmail = req.decoded.email;
+        const query = { email: decodedEmail };
+        const user = await usersCollection.findOne(query);
+        if (user?.role !== 'Sellers') {
+            return res.status(403).send({ message: 'forbidden access' })
+        }
+        next();
+    }
+
     // handle user
     app.put('/users/:email', async (req, res) => {
         const email = req.params.email;
@@ -46,14 +67,14 @@ async function run() {
         const token = jwt.sign({ email }, process.env.SECRET_TOKEN, { expiresIn: '1d' });
         res.send({ results, token })
     })
-    app.get('/users/role/:email', verifyJwt, async (req, res) => {
+    app.get('/users/role/:email', async (req, res) => {
         const email = req.params.email;
         const query = { email: email };
         const user = await usersCollection.findOne(query);
         res.send({ role: user?.role })
     })
-    app.get('/users/:role', async (req, res) => {
-        const useRole = req.params.role;
+    app.get('/users/:userRole', verifyJwt, verifyAdmin, async (req, res) => {
+        const useRole = req.params.userRole;
         if (useRole === 'sellers') {
             const query = { role: 'Sellers' };
             const sellers = await usersCollection.find(query).toArray();
@@ -62,7 +83,12 @@ async function run() {
         const buyers = await usersCollection.find({ $and: [{ role: { $ne: "Sellers" } }, { role: { $ne: "Admin" } }] }).toArray();
         res.send(buyers);
     })
-    app.patch('/users/sellers/:id', verifyJwt, async (req, res) => {
+    app.delete('/users/:id', verifyJwt, verifyAdmin, async (req, res) => {
+        const filter = { _id: ObjectId(req.params.id) };
+        const results = await usersCollection.deleteOne(filter);
+        res.send(results);
+    })
+    app.patch('/users/sellers/:id', verifyJwt, verifyAdmin, async (req, res) => {
         const filter = { _id: ObjectId(req.params.id) };
         const updateDoc = {
             $set: { verified: true }
@@ -70,25 +96,25 @@ async function run() {
         const results = await usersCollection.updateOne(filter, updateDoc);
         res.send(results);
     })
-    app.get('/users/verify', async (req, res) => {
-        const email = req.query.email;
-        const query = { email: email };
+    app.get('/test/verify', async (req, res) => {
+        const seller = req.query.seller;
+        const query = { email: seller };
         const user = await usersCollection.findOne(query);
-        res.send(user.verified || false)
+        res.send(user?.verified || false)
     })
     // manage products
-    app.post('/products', verifyJwt, async (req, res) => {
+    app.post('/products', verifyJwt, verifySeller, async (req, res) => {
         const product = req.body;
         const results = await phonesCollection.insertOne(product);
         res.send(results)
     })
-    app.get('/products/:email', verifyJwt, async (req, res) => {
+    app.get('/products/:email', verifyJwt, verifySeller, async (req, res) => {
         const email = req.params.email;
         const query = { sellerEmail: email };
         const products = await phonesCollection.find(query).toArray();
         res.send(products)
     })
-    app.delete('/products/:id', verifyJwt, async (req, res) => {
+    app.delete('/products/:id', verifyJwt, verifySeller, async (req, res) => {
         const query = { _id: ObjectId(req.params.id) };
         const results = await phonesCollection.deleteOne(query);
         res.send(results);
@@ -108,7 +134,7 @@ async function run() {
         res.send(categories)
     })
     // manage orders
-    app.post('/orders', verifyJwt, async (req, res) => { 
+    app.post('/orders', verifyJwt, async (req, res) => {
         const phoneId = req.query.phoneId;
         const email = req.query.clientEmail;
         const order = req.body;
@@ -124,6 +150,17 @@ async function run() {
         res.send(results)
         // const addStatus = await phonesCollection.updateOne(filter, updateDoc);
     })
+    app.get('/orders', verifyJwt, async (req, res) => {
+        const email = req.decoded.email;
+        const query = {clientEmail: email};
+        const myOrders = await orderCollection.find(query).toArray();
+        res.send(myOrders);
+    })
+    app.delete('/orders/:id',verifyJwt, async(req, res, next)=> {
+        const query = {_id: ObjectId(req.params.id)};
+        const results = await orderCollection.deleteOne(query);
+        res.send(results)
+    }) 
     // advertise api
     app.put('/advertised/:id', verifyJwt, async (req, res) => {
         const phoneId = req.params.id;
